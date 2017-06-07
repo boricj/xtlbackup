@@ -6,11 +6,33 @@ use Getopt::Std;
 use JSON;
 use POSIX 'strftime';
 
-my $BTRFS_PATH = '/bin/btrfs';
+my %tools;
 
 my @snapshot_jobs;
 
 my %options;
+
+#
+# Detect tools.
+#
+sub detect_tools {
+	my @tools_list = qw(btrfs);
+	my @locations = qw(/bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin);
+
+	# Scan tools locations
+	foreach my $tool (@tools_list) {
+		foreach my $location (@locations) {
+			if (-e "$location/$tool") {
+				$tools{$tool} = "$location/$tool";
+			}
+		}
+	}
+
+	# Check if all tools were found
+	foreach my $tool (@tools_list) {
+		die "Error: can't find executable $tool" if ! exists $tools{$tool};
+	}
+}
 
 #
 # Run snapshot jobs.
@@ -18,7 +40,7 @@ my %options;
 sub run_snapshot_jobs {
 	foreach (@snapshot_jobs) {
 		my $dest = strftime($$_{'to'}, localtime);
-		my @cmd = ($BTRFS_PATH, 'subvolume', 'snapshot', '-r', $$_{'from'}, $dest);
+		my @cmd = ($tools{'btrfs'}, 'subvolume', 'snapshot', '-r', $$_{'from'}, $dest);
 
 		if (! defined $options{d}) {
 			system(@cmd) == 0 or die "Error: snapshot job failed with code $?";
@@ -114,6 +136,12 @@ sub parse_config_file {
 		parse_config_object $dataconf;
 	}
 }
+
+#
+# Main program.
+#
+
+detect_tools();
 
 # Process command line.
 getopts('d', \%options);
