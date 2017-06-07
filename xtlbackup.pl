@@ -10,6 +10,7 @@ use POSIX 'strftime';
 my %tools;
 
 my @snapshot_jobs;
+my @prune_jobs;
 
 my %options;
 
@@ -54,13 +55,36 @@ sub run_snapshot_jobs {
 }
 
 #
+# Run prune jobs.
+#
+sub run_prune_jobs {
+	foreach (@prune_jobs) {
+		$$_{'target'} =~ /^(.*?)%/;
+		my @targets = sort {$b cmp $a } glob ("$1*");
+
+		while (scalar @targets > $keep_max) {
+			my $target = pop @targets;
+
+			print "Pruning '$target'.\n" if defined $options{v};
+
+			my @cmd = ($tools{'btrfs'}, 'subvolume', 'delete', $target);
+
+			if (! defined $options{d}) {
+				run \@cmd or die "Error: prune job failed";
+			}
+		}
+	}
+}
+
+#
 # Check if a configuration object is correct.
 #
 # $_[0]: object to check
 sub check_config_object {
 	my %valid_tags = (
-	    'subvolume' => 'SCALAR',
-	    'snapshot_to' => 'SCALAR'
+	    'keep_max' => 'SCALAR',
+	    'snapshot_to' => 'SCALAR',
+	    'subvolume' => 'SCALAR'
 	) ;
 	my $key, my %obj;
 
@@ -104,7 +128,17 @@ sub parse_config_object {
 		    'from' => $_[0]{'subvolume'},
 		    'to' => $_[0]{'snapshot_to'}
 		);
+
 		push @snapshot_jobs, \%job;
+	}
+
+	if (exists $_[0]{'keep_max'}) {
+		my %job = (
+		    'target' => $_[0]{'snapshot_to'},
+		    'keep_max' => $_[0]{'keep_max'}
+		);
+
+		push @prune_jobs, \%job;
 	}
 }
 
@@ -164,3 +198,4 @@ else {
 }
 
 run_snapshot_jobs();
+run_prune_jobs();
