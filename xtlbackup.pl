@@ -63,9 +63,9 @@ sub run_prune_jobs {
 		my @targets = sort {$b cmp $a } glob ("$1*");
 
 		my $keep_max = $$_{'keep_max'};
-		# Account for snapshot not taken if running in dry-mode
+
 		if (defined $options{d}) {
-			$keep_max = $keep_max - 1;
+			print "Pruning job '$1' not simulated (keep $keep_max snapshots max)\n";
 		}
 
 		while (scalar @targets > $keep_max) {
@@ -73,10 +73,7 @@ sub run_prune_jobs {
 
 			my @cmd = ($tools{'btrfs'}, 'subvolume', 'delete', $target);
 
-			if (defined $options{d}) {
-				print "Delete subvolume (no-commit): '$target'\n";
-			}
-			else {
+			if (! defined $options{d}) {
 				run \@cmd or die "Error: prune job failed";
 			}
 		}
