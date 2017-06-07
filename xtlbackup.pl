@@ -31,6 +31,7 @@ sub detect_tools {
 	# Check if all tools were found
 	foreach my $tool (@tools_list) {
 		die "Error: can't find executable $tool" if ! exists $tools{$tool};
+		print STDERR "Found tool $tool at $tools{$tool}.\n" if defined $options{v};
 	}
 }
 
@@ -41,6 +42,8 @@ sub run_snapshot_jobs {
 	foreach (@snapshot_jobs) {
 		my $dest = strftime($$_{'to'}, localtime);
 		my @cmd = ($tools{'btrfs'}, 'subvolume', 'snapshot', '-r', $$_{'from'}, $dest);
+
+		print "Snapshotting '$$_{'from'}' to '$dest'.\n" if defined $options{v};
 
 		if (! defined $options{d}) {
 			system(@cmd) == 0 or die "Error: snapshot job failed with code $?";
@@ -144,7 +147,7 @@ sub parse_config_file {
 detect_tools();
 
 # Process command line.
-getopts('d', \%options);
+getopts('dv', \%options);
 
 print STDERR "Dry-run mode on, no modifications will be made.\n" if defined $options{d};
 
