@@ -3,6 +3,7 @@
 use strict;
 
 use Getopt::Std;
+use IPC::Run 'run';
 use JSON;
 use POSIX 'strftime';
 
@@ -41,12 +42,13 @@ sub detect_tools {
 sub run_snapshot_jobs {
 	foreach (@snapshot_jobs) {
 		my $dest = strftime($$_{'to'}, localtime);
+
 		my @cmd = ($tools{'btrfs'}, 'subvolume', 'snapshot', '-r', $$_{'from'}, $dest);
 
 		print "Snapshotting '$$_{'from'}' to '$dest'.\n" if defined $options{v};
 
 		if (! defined $options{d}) {
-			system(@cmd) == 0 or die "Error: snapshot job failed with code $?";
+			run \@cmd or die "Error: snapshot job failed";
 		}
 	}
 }
