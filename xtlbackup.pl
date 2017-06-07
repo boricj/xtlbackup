@@ -90,7 +90,7 @@ sub run_prune_jobs {
 sub check_config_object {
 	my %valid_tags = (
 	    'keep_max' => 'SCALAR',
-	    'snapshot_to' => 'SCALAR',
+	    'snapshots' => 'SCALAR',
 	    'subvolume' => 'SCALAR'
 	) ;
 	my $key, my %obj;
@@ -116,12 +116,8 @@ sub check_config_object {
 	}
 
 	# Check object semantics
-	if (! exists $_[0]{'subvolume'}) {
-		die 'Error: missing mandatory "subvolume" key';
-	}
-
-	if (! exists $_[0]{'snapshot_to'}) {
-		die 'Error: missing mandatory "snapshot_to" key';
+	if (! (exists $_[0]{'snapshots'})) {
+		die 'Error: missing mandatory "snapshots" key';
 	}
 }
 
@@ -130,10 +126,10 @@ sub check_config_object {
 #
 # $_[0]: object to parse
 sub parse_config_object {
-	if (exists $_[0]{'snapshot_to'}) {
+	if (exists $_[0]{'subvolume'} and exists $_[0]{'snapshots'}) {
 		my %job = (
 		    'from' => $_[0]{'subvolume'},
-		    'to' => $_[0]{'snapshot_to'}
+		    'to' => $_[0]{'snapshots'}
 		);
 
 		push @snapshot_jobs, \%job;
@@ -141,7 +137,7 @@ sub parse_config_object {
 
 	if (exists $_[0]{'keep_max'}) {
 		my %job = (
-		    'target' => $_[0]{'snapshot_to'},
+		    'target' => $_[0]{'snapshots'},
 		    'keep_max' => $_[0]{'keep_max'}
 		);
 
