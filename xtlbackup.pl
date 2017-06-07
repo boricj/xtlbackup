@@ -33,7 +33,6 @@ sub detect_tools {
 	# Check if all tools were found
 	foreach my $tool (@tools_list) {
 		die "Error: can't find executable $tool" if ! exists $tools{$tool};
-		print STDERR "Found tool $tool at $tools{$tool}.\n" if defined $options{v};
 	}
 }
 
@@ -46,9 +45,10 @@ sub run_snapshot_jobs {
 
 		my @cmd = ($tools{'btrfs'}, 'subvolume', 'snapshot', '-r', $$_{'from'}, $dest);
 
-		print "Snapshotting '$$_{'from'}' to '$dest'.\n" if defined $options{v};
-
-		if (! defined $options{d}) {
+		if (defined $options{d}) {
+			print "Create a readonly snapshot of '$$_{'from'}' in '$dest'\n";
+		}
+		else {
 			run \@cmd or die "Error: snapshot job failed";
 		}
 	}
@@ -62,14 +62,21 @@ sub run_prune_jobs {
 		$$_{'target'} =~ /^(.*?)%/;
 		my @targets = sort {$b cmp $a } glob ("$1*");
 
+		my $keep_max = $$_{'keep_max'};
+		# Account for snapshot not taken if running in dry-mode
+		if (defined $options{d}) {
+			$keep_max = $keep_max - 1;
+		}
+
 		while (scalar @targets > $keep_max) {
 			my $target = pop @targets;
 
-			print "Pruning '$target'.\n" if defined $options{v};
-
 			my @cmd = ($tools{'btrfs'}, 'subvolume', 'delete', $target);
 
-			if (! defined $options{d}) {
+			if (defined $options{d}) {
+				print "Delete subvolume (no-commit): '$target'\n";
+			}
+			else {
 				run \@cmd or die "Error: prune job failed";
 			}
 		}
@@ -183,7 +190,7 @@ sub parse_config_file {
 detect_tools();
 
 # Process command line.
-getopts('dv', \%options);
+getopts('d', \%options);
 
 print STDERR "Dry-run mode on, no modifications will be made.\n" if defined $options{d};
 
