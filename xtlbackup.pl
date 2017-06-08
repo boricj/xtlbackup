@@ -12,6 +12,7 @@ my %tools;
 
 my @snapshot_jobs;
 my @backup_jobs;
+my @remote_backup_jobs;
 my @prune_jobs;
 
 my %options;
@@ -23,13 +24,18 @@ my %options;
 # Command to launch in case everything goes horribly wrong.
 my @cleanup_cmd;
 
-END {
+local $SIG{__DIE__} = sub {
+	my $message = shift;
+	print STDERR $message;
+
 	if ($#cleanup_cmd) {
 		print "Error detected, running cleanup command\n";
 		run @cleanup_cmd;
 		@cleanup_cmd = undef;
 	}
-}
+
+	exit 1;
+};
 
 sub signal_cleanup {
 	print "Interrupted by signal\n";
@@ -48,7 +54,7 @@ use sigtrap qw(handler signal_cleanup normal-signals error-signals);
 # Detect tools.
 #
 sub detect_tools {
-	my @tools_list = qw(btrfs);
+	my @tools_list = qw(btrfs ssh);
 	my @locations = qw(/bin /sbin /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin);
 
 	# Scan tools locations
@@ -67,9 +73,43 @@ sub detect_tools {
 }
 
 #
+# Given two lists of snapshots, return instructions for replicating snapshots from source to target.
+#
+sub compute_backup_work {
+	my @source_snapshots = @{@_[0]};
+	my %target_snapshots = map {$_ => 1 } @{@_[1]};
+	my $common_snapshot;
+	my @missing_snapshots;
+	my $target = $_[2];
+
+	# Build list of missing snapshots
+	LOOP: foreach my $snapshot (@source_snapshots) {
+		my $dir_snapshot = dirname($snapshot);
+		my $name_snapshot = basename($snapshot);
+
+		# Check if snapshot is already at target
+		if (exists $target_snapshots{"$target/$name_snapshot"}) {
+			# If there's no missing snapshots, we can use it as a base
+			if (! @missing_snapshots) {
+				$common_snapshot = $snapshot;
+			}
+			next LOOP;
+		}
+		# Snapshot missing, add it to the list
+		else {
+			push @missing_snapshots, $snapshot;
+		}
+	}
+
+	return ($common_snapshot, @missing_snapshots);
+}
+
+#
 # Run snapshot jobs.
 #
 sub run_snapshot_jobs {
+	print "Performing snapshotting jobs...\n";
+
 	foreach (@snapshot_jobs) {
 		my $dest = strftime($$_{'to'}, localtime);
 
@@ -88,36 +128,18 @@ sub run_snapshot_jobs {
 # Run backup jobs.
 #
 sub run_backup_jobs {
+	print "Performing backup jobs...\n";
+
 	foreach (@backup_jobs) {
 		my $target = $$_{'to'};
 		$$_{'from'} =~ /^(.*?)%/;
-		my @source_snapshots = sort {$b cmp $a } glob ("$1*");
-		my @target_snapshots = sort {$b cmp $a } glob ("$target/*");
+		my @source_snapshots = sort glob ("$1*");
+		my @target_snapshots = sort glob ("$target/*");
 
-		my $common_snapshot;
-		my @missing_snapshots;
+		my ($common_snapshot, @missing_snapshots) = compute_backup_work(\@source_snapshots, \@target_snapshots, $target);
 
 		if (defined $options{d}) {
 			print "Backup job from '$1' to '$target' not simulated\n";
-		}
-
-		# Build list of missing snapshots
-		LOOP: foreach my $snapshot (@source_snapshots) {
-			my $dir_snapshot = dirname($snapshot);
-			my $name_snapshot = basename($snapshot);
-
-			# Check if snapshot is already at target
-			if (grep(/^$target\/$name_snapshot$/, @target_snapshots)) {
-				# If there's no missing snapshots, we can use it as a base
-				if (! @missing_snapshots) {
-					$common_snapshot = $snapshot;
-				}
-				next LOOP;
-			}
-			# Snapshot missing, add it to the list
-			else {
-				push @missing_snapshots, $snapshot;
-			}
 		}
 
 		# Transfer missing snapshots
@@ -127,10 +149,12 @@ sub run_backup_jobs {
 
 			if (defined $common_snapshot) {
 				# Incremental send
+				print "Incremantal send\n";
 				@send = ($tools{'btrfs'}, 'send', '-p', $common_snapshot, $snapshot);
 			}
 			else {
 				# Full send
+				print "Full send\n";
 				@send = ($tools{'btrfs'}, 'send', $snapshot);
 			}
 
@@ -145,10 +169,64 @@ sub run_backup_jobs {
 	}
 }
 
+
+#
+# Run remote_backup jobs.
+#
+sub run_remote_backup_jobs {
+	print "Performing remote backup jobs...\n";
+
+	foreach (@remote_backup_jobs) {
+		my $target = $$_{'to'};
+		my $identity = $$_{'id'};
+		my $host = $$_{'host'};
+
+		my @remote_glob = ($tools{'ssh'}, '-oBatchMode=yes', '-i', $identity, $host, 'ls', $target);
+		my $remote_glob_result;
+		run \@remote_glob, '>', \$remote_glob_result or die "Error: remote backup job failed";
+
+		$$_{'from'} =~ /^(.*?)%/;
+		my @source_snapshots = sort glob ("$1*");
+		my @target_snapshots = split ' ', $remote_glob_result;
+		my @target_snapshots = sort map "$target/$target_snapshots[$_]", 0..$#target_snapshots;
+
+		my ($common_snapshot, @missing_snapshots) = compute_backup_work(\@source_snapshots, \@target_snapshots, $target);
+
+		if (defined $options{d}) {
+			print "Remote backup job from '$1' to '$target' not simulated\n";
+		}
+
+		# Transfer missing snapshots
+		foreach my $snapshot (@missing_snapshots) {
+			my @send;
+			my @ssh = ($tools{'ssh'}, '-C', '-oBatchMode=yes', '-i', $identity, $host, 'btrfs', 'receive', $target);
+
+			if (defined $common_snapshot) {
+				# Incremental send
+				print "Incremantal send\n";
+				@send = ($tools{'btrfs'}, 'send', '-p', $common_snapshot, $snapshot);
+			}
+			else {
+				# Full send
+				print "Full send\n";
+				@send = ($tools{'btrfs'}, 'send', $snapshot);
+			}
+
+			if (! defined $options{d}) {
+				run \@send, '|', \@ssh or die "Error: remote backup job failed";
+			}
+
+			$common_snapshot = $snapshot;
+		}
+	}
+}
+
 #
 # Run prune jobs.
 #
 sub run_prune_jobs {
+	print "Performing pruning jobs...\n";
+
 	foreach (@prune_jobs) {
 		$$_{'target'} =~ /^(.*?)%/;
 		my @targets = sort {$b cmp $a } glob ("$1*");
@@ -179,6 +257,9 @@ sub check_config_object {
 	my %valid_tags = (
 	    'backups' => 'SCALAR',
 	    'keep_max' => 'SCALAR',
+	    'remote_backups' => 'SCALAR',
+	    'remote_host' => 'SCALAR',
+	    'remote_id' => 'SCALAR',
 	    'snapshots' => 'SCALAR',
 	    'subvolume' => 'SCALAR'
 	) ;
@@ -208,6 +289,11 @@ sub check_config_object {
 	if (! (exists $_[0]{'snapshots'})) {
 		die 'Error: missing mandatory "snapshots" key';
 	}
+
+	my $remote_count = (exists $_[0]{'remote_backups'}) + (exists $_[0]{'remote_host'}) + (exists $_[0]{'remote_id'});
+	if ($remote_count != 0 and $remote_count != 3) {
+		die 'Error: all keys "remote_backups", "remote_host" and "remote_id" are mandatory for remote backups';
+	}
 }
 
 #
@@ -231,6 +317,17 @@ sub parse_config_object {
 		);
 
 		push @backup_jobs, \%job;
+	}
+
+	if (exists $_[0]{'remote_backups'}) {
+		my %job = (
+		    'from' => $_[0]{'snapshots'},
+		    'to' => $_[0]{'remote_backups'},
+			'host' => $_[0]{'remote_host'},
+			'id' => $_[0]{'remote_id'}
+		);
+
+		push @remote_backup_jobs, \%job;
 	}
 
 	if (exists $_[0]{'keep_max'}) {
@@ -300,4 +397,5 @@ else {
 
 run_snapshot_jobs();
 run_backup_jobs();
+run_remote_backup_jobs();
 run_prune_jobs();
