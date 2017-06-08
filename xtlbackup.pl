@@ -181,10 +181,16 @@ sub run_backup_jobs {
 sub run_remote_backup_jobs {
 	print "Performing remote backup jobs...\n";
 
-	foreach (@remote_backup_jobs) {
+	LOOP: foreach (@remote_backup_jobs) {
 		my $target = $$_{'to'};
 		my $identity = $$_{'id'};
 		my $host = $$_{'host'};
+
+		if (defined $options{d}) {
+			$$_{'from'} =~ /^(.*?)%/;
+			print "Remote backup job from '$1' to '$target' not simulated\n";
+			next LOOP;
+		}
 
 		my @remote_glob = ($tools{'ssh'}, '-oBatchMode=yes', '-i', $identity, $host, 'ls', $target);
 		my $remote_glob_result;
@@ -196,10 +202,6 @@ sub run_remote_backup_jobs {
 		my @target_snapshots = sort map "$target/$target_snapshots[$_]", 0..$#target_snapshots;
 
 		my ($common_snapshot, @missing_snapshots) = compute_backup_work(\@source_snapshots, \@target_snapshots, $target);
-
-		if (defined $options{d}) {
-			print "Remote backup job from '$1' to '$target' not simulated\n";
-		}
 
 		# Transfer missing snapshots
 		foreach my $snapshot (@missing_snapshots) {
