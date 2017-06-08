@@ -110,8 +110,13 @@ sub compute_backup_work {
 sub run_snapshot_jobs {
 	print "Performing snapshotting jobs...\n";
 
-	foreach (@snapshot_jobs) {
+	LOOP: foreach (@snapshot_jobs) {
 		my $dest = strftime($$_{'to'}, localtime);
+
+		# Skip snapshot if it already exists
+		if (-e $dest) {
+			next LOOP;
+		}
 
 		my @cmd = ($tools{'btrfs'}, 'subvolume', 'snapshot', '-r', $$_{'from'}, $dest);
 
