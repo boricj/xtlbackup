@@ -2,6 +2,7 @@
 
 use strict;
 
+use File::Basename;
 use Getopt::Std;
 use IPC::Run 'run';
 use JSON;
@@ -10,9 +11,38 @@ use POSIX 'strftime';
 my %tools;
 
 my @snapshot_jobs;
+my @backup_jobs;
 my @prune_jobs;
 
 my %options;
+
+#
+# Cleanup functions on error.
+#
+
+# Command to launch in case everything goes horribly wrong.
+my @cleanup_cmd;
+
+END {
+	if ($#cleanup_cmd) {
+		print "Error detected, running cleanup command\n";
+		run @cleanup_cmd;
+		@cleanup_cmd = undef;
+	}
+}
+
+sub signal_cleanup {
+	print "Interrupted by signal\n";
+
+	if ($#cleanup_cmd) {
+		run @cleanup_cmd;
+		@cleanup_cmd = undef;
+	}
+
+	exit 1;
+}
+
+use sigtrap qw(handler signal_cleanup normal-signals error-signals);
 
 #
 # Detect tools.
@@ -55,6 +85,67 @@ sub run_snapshot_jobs {
 }
 
 #
+# Run backup jobs.
+#
+sub run_backup_jobs {
+	foreach (@backup_jobs) {
+		my $target = $$_{'to'};
+		$$_{'from'} =~ /^(.*?)%/;
+		my @source_snapshots = sort {$b cmp $a } glob ("$1*");
+		my @target_snapshots = sort {$b cmp $a } glob ("$target/*");
+
+		my $common_snapshot;
+		my @missing_snapshots;
+
+		if (defined $options{d}) {
+			print "Backup job from '$1' to '$target' not simulated\n";
+		}
+
+		# Build list of missing snapshots
+		LOOP: foreach my $snapshot (@source_snapshots) {
+			my $dir_snapshot = dirname($snapshot);
+			my $name_snapshot = basename($snapshot);
+
+			# Check if snapshot is already at target
+			if (grep(/^$target\/$name_snapshot$/, @target_snapshots)) {
+				# If there's no missing snapshots, we can use it as a base
+				if (! @missing_snapshots) {
+					$common_snapshot = $snapshot;
+				}
+				next LOOP;
+			}
+			# Snapshot missing, add it to the list
+			else {
+				push @missing_snapshots, $snapshot;
+			}
+		}
+
+		# Transfer missing snapshots
+		foreach my $snapshot (@missing_snapshots) {
+			my @send;
+			my @receive = ($tools{'btrfs'}, 'receive', $target);
+
+			if (defined $common_snapshot) {
+				# Incremental send
+				@send = ($tools{'btrfs'}, 'send', '-p', $common_snapshot, $snapshot);
+			}
+			else {
+				# Full send
+				@send = ($tools{'btrfs'}, 'send', $snapshot);
+			}
+
+			if (! defined $options{d}) {
+				@cleanup_cmd = ($tools{'btrfs'}, 'subvolume', 'delete', $target . '/' . basename($snapshot)); 
+				run \@send, '|', \@receive or die "Error: backup job failed";
+				@cleanup_cmd = undef;
+			}
+
+			$common_snapshot = $snapshot;
+		}
+	}
+}
+
+#
 # Run prune jobs.
 #
 sub run_prune_jobs {
@@ -86,6 +177,7 @@ sub run_prune_jobs {
 # $_[0]: object to check
 sub check_config_object {
 	my %valid_tags = (
+	    'backups' => 'SCALAR',
 	    'keep_max' => 'SCALAR',
 	    'snapshots' => 'SCALAR',
 	    'subvolume' => 'SCALAR'
@@ -123,13 +215,22 @@ sub check_config_object {
 #
 # $_[0]: object to parse
 sub parse_config_object {
-	if (exists $_[0]{'subvolume'} and exists $_[0]{'snapshots'}) {
+	if (exists $_[0]{'subvolume'}) {
 		my %job = (
 		    'from' => $_[0]{'subvolume'},
 		    'to' => $_[0]{'snapshots'}
 		);
 
 		push @snapshot_jobs, \%job;
+	}
+
+	if (exists $_[0]{'backups'}) {
+		my %job = (
+		    'from' => $_[0]{'snapshots'},
+		    'to' => $_[0]{'backups'}
+		);
+
+		push @backup_jobs, \%job;
 	}
 
 	if (exists $_[0]{'keep_max'}) {
@@ -198,4 +299,5 @@ else {
 }
 
 run_snapshot_jobs();
+run_backup_jobs();
 run_prune_jobs();
