@@ -1,4 +1,4 @@
-#/usr/bin/env perl
+#!/usr/bin/env perl
 
 use strict;
 
@@ -10,6 +10,7 @@ use POSIX 'strftime';
 
 my %tools;
 
+# Lists of jobs to do
 my @snapshot_jobs;
 my @backup_jobs;
 my @remote_backup_jobs;
@@ -73,13 +74,16 @@ sub detect_tools {
 }
 
 #
-# Given two lists of snapshots, return instructions for replicating snapshots from source to target.
+# Given two sorted lists of snapshots, return instructions for replicating
+# snapshots from source to target.
 #
 sub compute_backup_work {
 	my @source_snapshots = @{@_[0]};
 	my %target_snapshots = map {$_ => 1 } @{@_[1]};
-	my $common_snapshot;
+
 	my @missing_snapshots;
+	my $common_snapshot;
+
 	my $target = $_[2];
 
 	# Build list of missing snapshots
@@ -93,6 +97,7 @@ sub compute_backup_work {
 			if (! @missing_snapshots) {
 				$common_snapshot = $snapshot;
 			}
+
 			next LOOP;
 		}
 		# Snapshot missing, add it to the list
@@ -118,6 +123,7 @@ sub run_snapshot_jobs {
 			next LOOP;
 		}
 
+		# Do snapshot
 		my @cmd = ($tools{'btrfs'}, 'subvolume', 'snapshot', '-r', $$_{'from'}, $dest);
 
 		if (defined $options{d}) {
@@ -138,6 +144,8 @@ sub run_backup_jobs {
 	foreach (@backup_jobs) {
 		my $target = $$_{'to'};
 		$$_{'from'} =~ /^(.*?)%/;
+
+		# Grab lists of snapshots
 		my @source_snapshots = sort glob ("$1*");
 		my @target_snapshots = sort glob ("$target/*");
 
@@ -174,7 +182,6 @@ sub run_backup_jobs {
 	}
 }
 
-
 #
 # Run remote_backup jobs.
 #
@@ -192,14 +199,17 @@ sub run_remote_backup_jobs {
 			next LOOP;
 		}
 
+		# Grab list of snapshots at remote
 		my @remote_glob = ($tools{'ssh'}, '-oBatchMode=yes', '-i', $identity, $host, 'ls', $target);
 		my $remote_glob_result;
 		run \@remote_glob, '>', \$remote_glob_result or die "Error: remote backup job failed";
 
-		$$_{'from'} =~ /^(.*?)%/;
-		my @source_snapshots = sort glob ("$1*");
 		my @target_snapshots = split ' ', $remote_glob_result;
 		my @target_snapshots = sort map "$target/$target_snapshots[$_]", 0..$#target_snapshots;
+
+		# Grab list of local snapshots
+		$$_{'from'} =~ /^(.*?)%/;
+		my @source_snapshots = sort glob ("$1*");
 
 		my ($common_snapshot, @missing_snapshots) = compute_backup_work(\@source_snapshots, \@target_snapshots, $target);
 
@@ -235,6 +245,7 @@ sub run_prune_jobs {
 	print "Performing pruning jobs...\n";
 
 	foreach (@prune_jobs) {
+		# Grab reverse list of snapshots
 		$$_{'target'} =~ /^(.*?)%/;
 		my @targets = sort {$b cmp $a } glob ("$1*");
 
@@ -247,6 +258,7 @@ sub run_prune_jobs {
 		while (scalar @targets > $keep_max) {
 			my $target = pop @targets;
 
+			# Prune snapshot
 			my @cmd = ($tools{'btrfs'}, 'subvolume', 'delete', $target);
 
 			if (! defined $options{d}) {
@@ -257,10 +269,9 @@ sub run_prune_jobs {
 }
 
 #
-# Check if a configuration object is correct.
+# Validate a configuration object before using it.
 #
-# $_[0]: object to check
-sub check_config_object {
+sub validate_config_object {
 	my %valid_tags = (
 	    'backups' => 'SCALAR',
 	    'keep_max' => 'SCALAR',
@@ -270,6 +281,7 @@ sub check_config_object {
 	    'snapshots' => 'SCALAR',
 	    'subvolume' => 'SCALAR'
 	) ;
+
 	my $key, my %obj;
 
 	# Check object syntax
@@ -277,6 +289,7 @@ sub check_config_object {
 		die 'Error: expecting object configuration file, got ' . ref($_[0]);
 	}
 
+	# Grab object to check
 	%obj = %{$_[0]};
 
 	foreach $key (keys %obj) {
@@ -292,22 +305,24 @@ sub check_config_object {
 		}
 	}
 
-	# Check object semantics
+	# 'snapshots' keyword is required
 	if (! (exists $_[0]{'snapshots'})) {
 		die 'Error: missing mandatory "snapshots" key';
 	}
 
+	# Remote backup keys must be either all present or none present
 	my $remote_count = (exists $_[0]{'remote_backups'}) + (exists $_[0]{'remote_host'}) + (exists $_[0]{'remote_id'});
+
 	if ($remote_count != 0 and $remote_count != 3) {
 		die 'Error: all keys "remote_backups", "remote_host" and "remote_id" are mandatory for remote backups';
 	}
 }
 
 #
-# Parse a configuration object.
+# Parse a configuration object and populate job lists.
 #
-# $_[0]: object to parse
 sub parse_config_object {
+	# Subvolume job
 	if (exists $_[0]{'subvolume'}) {
 		my %job = (
 		    'from' => $_[0]{'subvolume'},
@@ -317,6 +332,7 @@ sub parse_config_object {
 		push @snapshot_jobs, \%job;
 	}
 
+	# Backup job
 	if (exists $_[0]{'backups'}) {
 		my %job = (
 		    'from' => $_[0]{'snapshots'},
@@ -326,6 +342,7 @@ sub parse_config_object {
 		push @backup_jobs, \%job;
 	}
 
+	# Remote backup job
 	if (exists $_[0]{'remote_backups'}) {
 		my %job = (
 		    'from' => $_[0]{'snapshots'},
@@ -337,6 +354,7 @@ sub parse_config_object {
 		push @remote_backup_jobs, \%job;
 	}
 
+	# Prune job
 	if (exists $_[0]{'keep_max'}) {
 		my %job = (
 		    'target' => $_[0]{'snapshots'},
@@ -350,7 +368,6 @@ sub parse_config_object {
 #
 # Parse a configuration file.
 #
-# $_[0]: path to file
 sub parse_config_file {
 	my $json, my $fileconf, my $dataconf, my $dataitem;
 
@@ -368,15 +385,16 @@ sub parse_config_file {
 	$json->relaxed(1);
 	$dataconf = $json->decode($fileconf);
 
-	# Parse JSON object
 	if (ref($dataconf) eq 'ARRAY') {
+		# Parse array of objects
 		foreach $dataitem (@$dataconf) {
-			check_config_object $dataitem;
+			validate_config_object $dataitem;
 			parse_config_object $dataitem;
 		}
 	}
 	else {
-		check_config_object $dataconf;
+		# Parse a single object
+		validate_config_object $dataconf;
 		parse_config_object $dataconf;
 	}
 }
