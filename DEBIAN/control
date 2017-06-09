@@ -1,0 +1,14 @@
+Package: xtlbackup
+Version: ${VERSION}
+Section: admin
+Priority: optional
+Architecture: all
+Depends: perl (>= 5.20), libipc-run-perl (>= 0.92), libjson-perl (>= 2.61)
+Suggests: openssh-client (>= 1:6.7)
+Maintainer: Jean-Baptiste Boric <jblbeurope@gmail.com>
+Homepage: https://github.com/boricj/xtlbackup
+Description: Simple yet powerful btrfs backup solution
+ xtlbackup is a backup solution based on btrfs. It allows one to take
+ snapshots of subvolumes, replicate them (locally or on a remote
+ system) and prune old snapshots. It uses simple JSON files to control
+ the backup workflow.
