@@ -17,22 +17,28 @@ The workflow is specified in one or more JSON configuration files:
 [
   # Job declaration block
   {
-    "snapshots":      "/snapshots/root-%Y-%m-%d-%H%M%S", # Snapshot zone with UNIX-style date format, mandatory
+    "snapshots":        "/snapshots/root-%Y-%m-%d-%H%M%S", # Snapshot zone with UNIX-style date format, mandatory
 
-    "subvolume":      "/root",                           # Subvolume to snapshot
-    "keep_max":       10,                                # Maximum number of snapshots to keep
-    "backups":        "/backups",                        # Replicate snapshots on separate filesystem 
+    "subvolume":        "/root",                           # Subvolume to snapshot
+    "keep_max":         10,                                # Maximum number of snapshots to keep
 
-    "remote_host":    "root@nas.example.com",            # Replicate snapshots on remote host
-    "remote_id":      "/root/.ssh/id_rsa_backup",        # SSH key for identification
-    "remote_backups": "/remote_backups"                  # Where to replicate on the remote host
+    "backups":          "/backups/root-%Y-%m-%d-%H%M%S",   # Replicate snapshots on separate filesystem
+    "keep_backups_max": 30,                                # Maximum number of backups to keep
+
+    "remote_host":      "root@nas.example.com",            # Replicate snapshots on remote host
+    "remote_id":        "/root/.ssh/id_rsa_backup",        # SSH key for identification
+    "remote_backups":   "/remote_backups"                  # Where to replicate on the remote host
   },
-  # Another job - no replications
-  {
-    "snapshots":      "/snapshots/home/%Y-%m-%d",        # Snapshot zone inside dedicated directory
 
-    "subvolume":      "/home",
-    "keep_max":       7
+  # Another job - no remote replications
+  {
+    "snapshots":        "/snapshots/home/%Y-%m-%d",        # Snapshot zone inside dedicated directory
+
+    "subvolume":        "/home",
+    "keep_max":         7
+
+    "backups":          "/backups/home",
+    "keep_backups_max": 15
   }
 ]
 ```

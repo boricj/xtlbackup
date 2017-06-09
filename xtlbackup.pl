@@ -108,6 +108,18 @@ sub compute_backup_work {
 }
 
 #
+# Trim timestamp from backup path
+#
+sub trim_backup_path {
+	if ($_[0] =~ /%./) {
+		return dirname($_[0]);
+	}
+	else {
+		return $_[0];
+	}
+}
+
+#
 # Run snapshot jobs.
 #
 sub run_snapshot_jobs {
@@ -134,8 +146,9 @@ sub run_backup_jobs {
 	print "Performing backup jobs...\n";
 
 	foreach (@backup_jobs) {
-		my $target = $$_{'to'};
+		my $target = trim_backup_path($$_{'to'});
 		$$_{'from'} =~ /^(.*?)%/;
+
 
 		# Grab lists of snapshots
 		my @source_snapshots = sort glob ("$1*");
@@ -176,7 +189,7 @@ sub run_remote_backup_jobs {
 	print "Performing remote backup jobs...\n";
 
 	foreach (@remote_backup_jobs) {
-		my $target = $$_{'to'};
+		my $target = trim_backup_path($$_{'to'});
 		my $identity = $$_{'id'};
 		my $host = $$_{'host'};
 
@@ -247,6 +260,7 @@ sub run_prune_jobs {
 sub validate_config_object {
 	my %valid_tags = (
 	    'backups' => 'SCALAR',
+	    'keep_backups_max' => 'SCALAR',
 	    'keep_max' => 'SCALAR',
 	    'remote_backups' => 'SCALAR',
 	    'remote_host' => 'SCALAR',
@@ -279,7 +293,7 @@ sub validate_config_object {
 	}
 
 	# 'snapshots' keyword is required
-	if (! (exists $_[0]{'snapshots'})) {
+	if (! exists $_[0]{'snapshots'}) {
 		die 'Error: missing mandatory "snapshots" key';
 	}
 
@@ -288,6 +302,11 @@ sub validate_config_object {
 
 	if ($remote_count != 0 and $remote_count != 3) {
 		die 'Error: all keys "remote_backups", "remote_host" and "remote_id" are mandatory for remote backups';
+	}
+
+	# 'keep_backups_max' keyword requires 'backups'
+	if ((exists $_[0]{'keep_backups_max'}) and (! exists $_[0]{'backups'})) {
+		die 'Error: key "keep_backups_max" requires key "backups"';
 	}
 }
 
@@ -332,6 +351,25 @@ sub parse_config_object {
 		my %job = (
 		    'target' => $_[0]{'snapshots'},
 		    'keep_max' => $_[0]{'keep_max'}
+		);
+
+		push @prune_jobs, \%job;
+	}
+
+	# Backup prune job
+	if (exists $_[0]{'keep_backups_max'}) {
+		my $target;
+
+		if (basename($_[0]{'snapshots'}) eq basename($_[0]{'backups'})) {
+			$target = $_[0]{'backups'};
+		}
+		else {
+			$target = $_[0]{'backups'} . '/' . basename($_[0]{'snapshots'});
+		}
+
+		my %job = (
+		    'target' => $target,
+		    'keep_max' => $_[0]{'keep_backups_max'}
 		);
 
 		push @prune_jobs, \%job;
