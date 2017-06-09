@@ -51,6 +51,13 @@ On Debian-like systems, run:
 
 `# apt-get install libipc-run-perl libjson-perl`
 
+On other systems, you can try CPAN:
+
+```
+# cpanm IPC::Run
+# cpanm JSON
+```
+
 ## Why xtlbackup?
 
 * It's dead-simple.
