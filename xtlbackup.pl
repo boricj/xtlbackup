@@ -8,7 +8,10 @@ use IPC::Run 'run';
 use JSON;
 use POSIX 'strftime';
 
+our $VERSION = '0.0';
+
 my %tools;
+my %options;
 
 # Lists of jobs to do
 my @snapshot_jobs;
@@ -411,11 +414,38 @@ sub parse_config_file {
 }
 
 #
+# Help functions.
+#
+sub VERSION_MESSAGE {
+	print "xtlbackup version $VERSION\n";
+	exit 0;
+}
+
+sub HELP_MESSAGE {
+	VERSION_MESSAGE();
+	print "\n";
+	print "Usage: xtlbackup [config_file ...]\n";
+	exit 0;
+}
+
+#
 # Main program.
 #
 
 detect_tools();
 
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+getopts('hv', \%options);
+
+# Handle help and version
+if (defined $options{v}) {
+	VERSION_MESSAGE();
+}
+if (defined $options{h}) {
+	HELP_MESSAGE();
+}
+
+# Parse configuration files
 if (! defined $ARGV[0]) {
 	parse_config_file('/etc/xtlbackup.json');
 }
@@ -426,6 +456,7 @@ else {
 	}
 }
 
+# Work
 run_snapshot_jobs();
 run_backup_jobs();
 run_remote_backup_jobs();
