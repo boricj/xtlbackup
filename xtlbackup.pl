@@ -16,8 +16,6 @@ my @backup_jobs;
 my @remote_backup_jobs;
 my @prune_jobs;
 
-my %options;
-
 #
 # Cleanup functions on error.
 #
@@ -125,13 +123,7 @@ sub run_snapshot_jobs {
 
 		# Do snapshot
 		my @cmd = ($tools{'btrfs'}, 'subvolume', 'snapshot', '-r', $$_{'from'}, $dest);
-
-		if (defined $options{d}) {
-			print "Create a readonly snapshot of '$$_{'from'}' in '$dest'\n";
-		}
-		else {
-			run \@cmd or die "Error: snapshot job failed";
-		}
+		run \@cmd or die "Error: snapshot job failed";
 	}
 }
 
@@ -151,10 +143,6 @@ sub run_backup_jobs {
 
 		my ($common_snapshot, @missing_snapshots) = compute_backup_work(\@source_snapshots, \@target_snapshots, $target);
 
-		if (defined $options{d}) {
-			print "Backup job from '$1' to '$target' not simulated\n";
-		}
-
 		# Transfer missing snapshots
 		foreach my $snapshot (@missing_snapshots) {
 			my @send;
@@ -171,11 +159,10 @@ sub run_backup_jobs {
 				@send = ($tools{'btrfs'}, 'send', $snapshot);
 			}
 
-			if (! defined $options{d}) {
-				@cleanup_cmd = ($tools{'btrfs'}, 'subvolume', 'delete', $target . '/' . basename($snapshot)); 
-				run \@send, '|', \@receive or die "Error: backup job failed";
-				@cleanup_cmd = undef;
-			}
+			# Do send/receive
+			@cleanup_cmd = ($tools{'btrfs'}, 'subvolume', 'delete', $target . '/' . basename($snapshot));
+			run \@send, '|', \@receive or die "Error: backup job failed";
+			@cleanup_cmd = undef;
 
 			$common_snapshot = $snapshot;
 		}
@@ -188,16 +175,10 @@ sub run_backup_jobs {
 sub run_remote_backup_jobs {
 	print "Performing remote backup jobs...\n";
 
-	LOOP: foreach (@remote_backup_jobs) {
+	foreach (@remote_backup_jobs) {
 		my $target = $$_{'to'};
 		my $identity = $$_{'id'};
 		my $host = $$_{'host'};
-
-		if (defined $options{d}) {
-			$$_{'from'} =~ /^(.*?)%/;
-			print "Remote backup job from '$1' to '$target' not simulated\n";
-			next LOOP;
-		}
 
 		# Grab list of snapshots at remote
 		my @remote_glob = ($tools{'ssh'}, '-oBatchMode=yes', '-i', $identity, $host, 'ls', $target);
@@ -229,9 +210,8 @@ sub run_remote_backup_jobs {
 				@send = ($tools{'btrfs'}, 'send', $snapshot);
 			}
 
-			if (! defined $options{d}) {
-				run \@send, '|', \@ssh or die "Error: remote backup job failed";
-			}
+			# Do remote send/receive
+			run \@send, '|', \@ssh or die "Error: remote backup job failed";
 
 			$common_snapshot = $snapshot;
 		}
@@ -251,19 +231,12 @@ sub run_prune_jobs {
 
 		my $keep_max = $$_{'keep_max'};
 
-		if (defined $options{d}) {
-			print "Pruning job '$1' not simulated (keep $keep_max snapshots max)\n";
-		}
-
 		while (scalar @targets > $keep_max) {
 			my $target = pop @targets;
 
-			# Prune snapshot
+			# Do snapshot pruning
 			my @cmd = ($tools{'btrfs'}, 'subvolume', 'delete', $target);
-
-			if (! defined $options{d}) {
-				run \@cmd or die "Error: prune job failed";
-			}
+			run \@cmd or die "Error: prune job failed";
 		}
 	}
 }
@@ -404,11 +377,6 @@ sub parse_config_file {
 #
 
 detect_tools();
-
-# Process command line.
-getopts('d', \%options);
-
-print STDERR "Dry-run mode on, no modifications will be made.\n" if defined $options{d};
 
 if (! defined $ARGV[0]) {
 	parse_config_file('/etc/xtlbackup.json');
