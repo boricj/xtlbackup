@@ -30,7 +30,7 @@ local $SIG{__DIE__} = sub {
 	my $message = shift;
 	print STDERR $message;
 
-	if ($#cleanup_cmd) {
+	if ($#cleanup_cmd > 0) {
 		print "Error detected, running cleanup command\n";
 		run @cleanup_cmd;
 		@cleanup_cmd = undef;
@@ -152,7 +152,6 @@ sub run_backup_jobs {
 		my $target = trim_backup_path($$_{'to'});
 		$$_{'from'} =~ /^(.*?)%/;
 
-
 		# Grab lists of snapshots
 		my @source_snapshots = sort glob ("$1*");
 		my @target_snapshots = sort glob ("$target/*");
@@ -166,7 +165,7 @@ sub run_backup_jobs {
 
 			if (defined $common_snapshot) {
 				# Incremental send
-				print "Incremantal send\n";
+				print "Incremental send\n";
 				@send = ($tools{'btrfs'}, 'send', '-p', $common_snapshot, $snapshot);
 			}
 			else {
@@ -217,7 +216,7 @@ sub run_remote_backup_jobs {
 
 			if (defined $common_snapshot) {
 				# Incremental send
-				print "Incremantal send\n";
+				print "Incremental send\n";
 				@send = ($tools{'btrfs'}, 'send', '-p', $common_snapshot, $snapshot);
 			}
 			else {
