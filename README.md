@@ -35,9 +35,9 @@ The workflow is specified in one or more JSON configuration files:
     "snapshots":        "/snapshots/home/%Y-%m-%d",        # Snapshot zone inside dedicated directory
 
     "subvolume":        "/home",
-    "keep_max":         7
+    "keep_max":         7,
 
-    "backups":          "/backups/home",
+    "backups":          "${HOME_BACKUPS_LOCATION}",        # Environment ${variables} can be used too
     "keep_backups_max": 15
   }
 ]

@@ -384,12 +384,21 @@ sub parse_config_object {
 sub parse_config_file {
 	my $json, my $fileconf, my $dataconf, my $dataitem;
 
-	# Read config file into memory
 	{
+		# Read config file into memory
 		local $/ = undef;
 		open FILE, $_[0] or die "Couldn't open $_[0]: $!";
 		binmode FILE;
 		$fileconf = <FILE>;
+
+		# Check if variables are all defined
+		my @matches = ( $fileconf =~ /\$\{(\w+)\}/g ) ;
+		foreach my $match (@matches) {
+			die "Error: variable '$match' not defined" unless defined $ENV{$match};
+		}
+		# Substitute variables
+		$fileconf =~ s/\$\{(\w+)\}/$ENV{$1}/g;
+
 		close FILE;
 	}
 
