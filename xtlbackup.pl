@@ -8,7 +8,7 @@ use IPC::Run 'run';
 use JSON;
 use POSIX 'strftime';
 
-our $VERSION = '0.1';
+our $VERSION = '0.2';
 
 my %tools;
 my %options;
