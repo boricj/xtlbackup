@@ -45,6 +45,8 @@ The workflow is specified in one or more JSON configuration files:
 
 `xtlbackup /etc/xtlbackup-sample.json` will then take care of everything. If you want snapshots, replications and pruning to happen separately, split jobs into separate JSON files.
 
+Although you can use a standard SSH key for remote backups, it is recommended to use `xtlbackup-receive` to prevent unauthorized commands.
+
 ## Installing dependencies
 
 On Debian-like systems, run:

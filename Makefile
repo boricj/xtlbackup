@@ -8,9 +8,11 @@ all:
 install:
 	mkdir -p ${DESTDIR}/sbin
 	install xtlbackup.pl ${DESTDIR}/sbin/xtlbackup
+	install xtlbackup-receive.sh ${DESTDIR}/sbin/xtlbackup-receive
 
 uninstall:
 	rm -f ${DESTDIR}/sbin/xtlbackup
+	rm -f ${DESTDIR}/sbin/xtlbackup-receive
 
 build-deb:
 	mkdir -p ./xtlbackup-${VERSION}
